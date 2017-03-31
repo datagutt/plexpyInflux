@@ -1,6 +1,6 @@
 # plexpy-influxdb-export
 
-This script will query PlexPy to pull basic stats and store them in influxdb for use with Grafana or other graphing solutions. Credit to Drewster727 for intial script that this was based on/copied from: https://github.com/Drewster727/plexpy-influxdb-export
+This script will query PlexPy to pull basic stats and store them in influxdb for use with Grafana or other graphing solutions. Credit to Drewster727 for intial script that this was based on: https://github.com/Drewster727/plexpy-influxdb-export
 
 ## Dependencies
   * PlexPy (https://github.com/drzoidberg33/plexpy)
