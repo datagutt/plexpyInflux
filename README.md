@@ -47,4 +47,4 @@ This script will query PlexPy to pull basic stats and store them in influxdb for
   sudo systemctl enable plexpyInflux.service
   sudo systemctl start plexpyInflux
   ```
-- If you run into any problems, the script logs to /var/syslog
+- If you run into any problems, the script logs to /var/log/syslog
