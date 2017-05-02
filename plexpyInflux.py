@@ -6,192 +6,190 @@ import ConfigParser
 import re
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 from multiprocessing import Process
-from datetime import datetime # for obtaining the curren time and formatting it
-from influxdb import InfluxDBClient # via apt-get install python-influxdb
+from datetime import datetime  # for obtaining the curren time and formatting it
+from influxdb import InfluxDBClient  # via apt-get install python-influxdb
 from syslog import syslog
-requests.packages.urllib3.disable_warnings(InsecureRequestWarning) # suppress unverified cert warnings
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)  # suppress unverified cert warnings
 
-#####Variable definitions#########################
-plexpyUrlFormat = '{0}://{1}:{2}{4}/api/v2?apikey={3}'
+# Set global variables:
+PLEXPY_URL_FORMAT = '{0}://{1}:{2}{4}/api/v2?apikey={3}'
 
 conf = ConfigParser.ConfigParser()
 conf.read("plexpyInflux.conf")
 
-interval = int(conf.get("Script", "interval"))
-plexpyProto = conf.get("PlexPy", "protocol")
-plexpyHost = conf.get("PlexPy", "host")
-plexpyPort = conf.get("PlexPy", "port")
-plexpyApiKey = conf.get("PlexPy", "apikey")
-plexpyBaseUrl = conf.get("PlexPy", "baseurl")
-influxdbHost = conf.get("InfluxDB", "host")
-influxdbPort = conf.get("InfluxDB", "port")
-influxdbUser = conf.get("InfluxDB", "user")
-influxdbPassword = conf.get("InfluxDB", "password")
-influxdbDatabase = conf.get("InfluxDB", "database")
-#################################################
+INTERVAL = int(conf.get("Script", "INTERVAL"))
+PLEXPY_PROTO = conf.get("PlexPy", "protocol")
+PLEXPY_HOST = conf.get("PlexPy", "host")
+PLEXPY_PORT = conf.get("PlexPy", "port")
+PLEXPY_API_KEY = conf.get("PlexPy", "apikey")
+PLEXPY_BASE_URL = conf.get("PlexPy", "baseurl")
+INFLUXDB_HOST = conf.get("InfluxDB", "host")
+INFLUXDB_PORT = conf.get("InfluxDB", "port")
+INFLUXDB_USER = conf.get("InfluxDB", "user")
+INFLUXDB_PASSWORD = conf.get("InfluxDB", "password")
+INFLUXDB_DATABASE = conf.get("InfluxDB", "database")
 
-def GetUrl(protocol, host, port, apikey, baseurl):
-	base = ""
-	if baseurl:
-		base = "/{}".format(baseurl) #place / in front of baseurl if present
-		
-	return plexpyUrlFormat.format(protocol, host, port, apikey, base) #return fully formatted URL
-#end GetUrl
 
-def Run(url, influx):
-	while True:
-		getActivity = Process(target=GetActivity, args=(url, influx))
-		getActivity.start()
-		
-		getUsers = Process(target=GetUsers, args=(url, influx))
-		getUsers.start()
-		
-		getLibs = Process(target=GetLibs, args=(url, influx))
-		getLibs.start()
-		
-		time.sleep(interval)
-#end Run
+def get_url(protocol, host, port, apikey, baseurl):
+    base = ""
+    if baseurl:
+        base = "/{}".format(baseurl)  # place / in front of baseurl if present
 
-def GetActivity(url, influx):
-	cmd = url + '&cmd=get_activity' #set full request URI
+    return PLEXPY_URL_FORMAT.format(protocol, host, port, apikey, base)  # return fully formatted URL
+# end get_url
 
-	data = requests.get(cmd, verify=False).json() #pull data, formatted in json
-	
-	if data:
-		streamCount = int(data['response']['data']['stream_count']) #grab total stream count
-		
-		sessions = data['response']['data']['sessions'] #subsection data to the sessions
-		
-		totalPlaying = 0
-		transcodeCount = 0
-		transcodePlaying = 0
-		directCount = 0
-		directPlaying = 0
-		
-		for session in sessions: #loop through sessions counting the number of transcoding and direct play streams
-			if session['video_decision'] == 'direct play':
-				directCount += 1
-				if session['state'] == 'playing':
-					directPlaying += 1
-			else:
-				transcodeCount += 1
-				if session['state'] == 'playing':
-					transcodePlaying += 1
-					
-			if session['state'] == 'playing':
-				totalPlaying += 1
-		
-		#format the extracted values into json		
-		exportData = [
-			{
-				"measurement": "get_activity",
-				"time": datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
-				"tags": {'host': plexpyHost},
-				"fields" : { 
-					"stream_count": totalPlaying,
-					"transcode_count" : transcodeCount,
-					"transcode_playing" : transcodePlaying,
-					"direct_count" : directCount,
-					"direct_playing" : directPlaying
-				}
-			}
-		]
-		
-		influx.write_points(exportData) #write the values to influxDB
-		
-	else:
-		syslog("plexpyInflux ERROR-ABORT: failed to query plexPy, please verify your settings")
-		exit(0)
-	
-	
-#end GetActivity
 
-def GetUsers(url, influx):
-	cmd = url + '&cmd=get_users' #set full request URI
+def run(url, influx):
+    while True:
+        proc_get_activity = Process(target=get_activity, args=(url, influx))
+        proc_get_activity.start()
 
-	data = requests.get(cmd, verify=False).json() #pull data, formatted in json
-	
-	if data:
-		users = data['response']['data'] #subsection data to the users
-		
-		totalUsers = len(users) #count the total number of user entries
-		totalHomeUsers = 0
-		
-		for user in users: #loop through users, increase count for every "home" user
-			if user['is_home_user'] == '1':
-				totalHomeUsers += 1
-		
-		#format the extracted values into json		
-		exportData = [
-			{
-				"measurement": "get_users",
-				"time": datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
-				"tags": {'host': plexpyHost},
-				"fields" : {
-					"total_users": totalUsers,
-					"home_users": totalHomeUsers
-				}
-			}
-		]
-		
-		influx.write_points(exportData) #write the values to influxDB
-		
-	else:
-		syslog("plexpyInflux ERROR-ABORT: failed to query plexPy, please verify your settings")
-		exit(0)
-#end GetUsers
+        proc_get_users = Process(target=get_users, args=(url, influx))
+        proc_get_users.start()
 
-def GetLibs(url, influx):
-	cmd = url + '&cmd=get_libraries'
-	
-	data = requests.get(cmd, verify=False).json() #pull data, formatted in json
-	
-	if data:
-		libs = data['response']['data']
-		
-		numLibs = len(libs)
-		
-		libCount = {}
-		
-		for lib in libs:
-			key = str(lib['section_name']).lower()
-			
-			key = re.sub('[^A-Za-z0-9\s]+', '', key)
-			key = key.rstrip()
-			key = re.sub('[\s]+', ' ', key)
-			key = key.replace(" ", "_")
-			key = key + '_count'
-			
-			value = int(lib['count'])
-			
-			libCount[key] = value
-		
-		libCount['library_count'] = numLibs
-		
-		exportData = [
-			{
-				"measurement": "get_libraries",
-				"time": datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
-				"tags": {'host': plexpyHost}
-			}
-		]
-		
-		exportData[0]['fields'] = libCount
-		
-		influx.write_points(exportData) #write the values to influxDB
-		
-	else:
-		syslog("plexpyInflux ERROR-ABORT: failed to query plexPy, please verify your settings")
-		exit(0)
-#end GetLibs
+        proc_get_libs = Process(target=get_libs, args=(url, influx))
+        proc_get_libs.start()
+
+        time.sleep(INTERVAL)
+# end run
+
+
+def get_activity(url, influx):
+    cmd = url + '&cmd=get_activity'  # set full request URI
+
+    data = requests.get(cmd, verify=False).json()  # pull data, formatted in json
+
+    if data:
+        stream_count = int(data['response']['data']['stream_count'])  # grab total stream count
+
+        sessions = data['response']['data']['sessions']  # subsection data to the sessions
+
+        total_playing = 0
+        transcode_count = 0
+        transcode_playing = 0
+        direct_count = 0
+        direct_playing = 0
+
+        # loop through sessions counting the number of transcoding and direct play streams:
+        for session in sessions:
+            if session['video_decision'] == 'direct play':
+                direct_count += 1
+                if session['state'] == 'playing':
+                    direct_playing += 1
+            else:
+                transcode_count += 1
+                if session['state'] == 'playing':
+                    transcode_playing += 1
+
+            if session['state'] == 'playing':
+                total_playing += 1
+
+        # format the extracted values into json:
+        export_data = [
+            {
+                "measurement": "get_activity",
+                "time": datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+                "tags": {'host': PLEXPY_HOST},
+                "fields": {
+                    "stream_count": stream_count,
+                    "transcode_count": transcode_count,
+                    "transcode_playing": transcode_playing,
+                    "direct_count": direct_count,
+                    "direct_playing": direct_playing
+                }
+            }
+        ]
+
+        influx.write_points(export_data)  # write the values to influxDB
+    else:
+        syslog("plexpyInflux ERROR-ABORT: failed to query plexPy, please verify your settings")
+        exit(0)
+# end get_activity
+
+
+def get_users(url, influx):
+    cmd = url + '&cmd=get_users'  # set full request URI
+
+    data = requests.get(cmd, verify=False).json()  # pull data, formatted in json
+
+    if data:
+        users = data['response']['data']  # subsection data to the users
+
+        total_users = len(users)  # count the total number of user entries
+        total_home_users = 0
+
+        for user in users:  # loop through users, increase count for every "home" user
+            if user['is_home_user'] == '1':
+                total_home_users += 1
+
+        # format the extracted values into json
+        export_data = [
+            {
+                "measurement": "get_users",
+                "time": datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+                "tags": {'host': PLEXPY_HOST},
+                "fields": {
+                    "total_users": total_users,
+                    "home_users": total_home_users
+                }
+            }
+        ]
+
+        influx.write_points(export_data)  # write the values to influxDB
+
+    else:
+        syslog("plexpyInflux ERROR-ABORT: failed to query plexPy, please verify your settings")
+        exit(0)
+# end get_users
+
+
+def get_libs(url, influx):
+    cmd = url + '&cmd=get_libraries'
+
+    data = requests.get(cmd, verify=False).json()  # pull data, formatted in json
+
+    if data:
+        libs = data['response']['data']
+        num_libs = len(libs)
+        lib_count = {}
+
+        for lib in libs:
+            key = str(lib['section_name']).lower()
+            key = re.sub('[^A-Za-z0-9\s]+', '', key)
+            key = key.rstrip()
+            key = re.sub('[\s]+', ' ', key)
+            key = key.replace(" ", "_")
+            key = key + '_count'
+
+            value = int(lib['count'])
+            lib_count[key] = value
+
+        lib_count['library_count'] = num_libs
+
+        export_data = [
+            {
+                "measurement": "get_libraries",
+                "time": datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+                "tags": {'host': PLEXPY_HOST}
+            }
+        ]
+
+        export_data[0]['fields'] = lib_count
+        influx.write_points(export_data)  # write the values to influxDB
+
+    else:
+        syslog("plexpyInflux ERROR-ABORT: failed to query plexPy, please verify your settings")
+        exit(0)
+# end get_libs
+
 
 if __name__ == '__main__':
-	syslog("plexpyInflux: Script Started.")
-	
-	plexpyUrl = GetUrl(plexpyProto, plexpyHost, plexpyPort, plexpyApiKey, plexpyBaseUrl)
-	#example: http://192.168.1.10:8181/api/v2?apikey=0f9j092jfkldsjlfk
-	
-	influxdbClient = InfluxDBClient(influxdbHost, influxdbPort, influxdbUser, influxdbPassword, influxdbDatabase)
-	influxdbClient.query('CREATE DATABASE {0}'.format(influxdbDatabase)) #creates the database if it does not exist
-	
-	Run(plexpyUrl, influxdbClient)
+    syslog("plexpyInflux: Script Started.")
+
+    plexpyUrl = get_url(PLEXPY_PROTO, PLEXPY_HOST, PLEXPY_PORT, PLEXPY_API_KEY, PLEXPY_BASE_URL)
+    # example: http://192.168.1.10:8181/api/v2?apikey=0f9j092jfkldsjlfk
+
+    influxdbClient = InfluxDBClient(INFLUXDB_HOST, INFLUXDB_PORT, INFLUXDB_USER, INFLUXDB_PASSWORD, INFLUXDB_DATABASE)
+    influxdbClient.query('CREATE DATABASE {0}'.format(INFLUXDB_DATABASE))  # creates the database if it does not exist
+
+    run(plexpyUrl, influxdbClient)
